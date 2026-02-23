@@ -1,0 +1,533 @@
+\documentclass[11pt,twocolumn]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+% Hyperlink styling
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=blue!70!black,
+    urlcolor=blue!70!black
+}
+
+% Code listing style
+\lstset{
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    keywordstyle=\color{blue!70!black},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!60!black},
+    showstringspaces=false,
+    tabsize=2
+}
+
+% Compact sections
+\titlespacing*{\section}{0pt}{10pt}{5pt}
+\titlespacing*{\subsection}{0pt}{8pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{6pt}{3pt}
+
+% Compact lists
+\setlist{nosep,leftmargin=*}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{AgentSecBench: Draft v0.1}}
+\fancyhead[R]{\small\textit{February 2026}}
+\fancyfoot[C]{\thepage}
+
+\begin{document}
+
+% Title
+\twocolumn[
+\begin{@twocolumnfalse}
+\begin{center}
+{\LARGE\bfseries AgentSecBench: A Benchmark Framework for Evaluating\\Security Tools in the Age of Agentic Development}
+
+\vspace{12pt}
+
+{\large Draft v0.1 --- February 2026}
+
+\vspace{18pt}
+
+\begin{abstract}
+\noindent The emergence of AI coding agents has collapsed the latency window that traditional application security depended on. Static analysis, dependency scanning, and audit-layer tools were architected for human-speed development---they assume code exists before inspection. Agents generate, execute, and deploy before scanners run. Meanwhile, a new generation of AI-powered security tools---exemplified by Anthropic's Claude Code Security---promises reasoning-based vulnerability detection that surpasses pattern-matching approaches. Yet no standardized benchmark exists to evaluate these tools against each other or against the new attack surfaces that agentic development introduces.
+
+We propose \textbf{AgentSecBench}, an open benchmark framework that evaluates security tools across four trust dimensions: \textit{Secure} (vulnerability detection), \textit{Competent} (finding quality and actionability), \textit{Accountable} (explainability and auditability), and \textit{Surface} (coverage of novel agentic attack surfaces including MCP protocols, skill registries, and client-side exposure). We describe the benchmark architecture, a curated dataset of 60 intentionally vulnerable modern web applications, and a scoring methodology designed to capture the fundamental differences between white-box source analysis, black-box runtime reconnaissance, and traditional static/dynamic tools.
+\end{abstract}
+\vspace{18pt}
+\end{center}
+\end{@twocolumnfalse}
+]
+
+%% ============================================================
+\section{Introduction}
+
+Application security tooling is undergoing a phase transition. For two decades, the security industry operated on a stable assumption: developers write code, commit it, and scanners inspect it before or shortly after deployment. SAST tools match code against known vulnerability patterns. SCA tools check dependency manifests against CVE databases. DAST tools probe running applications against known attack signatures. The entire audit layer depends on a temporal gap between code creation and code execution.
+
+AI coding agents have eliminated that gap.
+
+Tools like Claude Code, Cursor, and Windsurf generate, test, and deploy code in seconds. The hallucinated npm package is installed before the scanner's next scheduled run. The misconfigured API route is live before the PR reviewer wakes up. Prevention---the foundational promise of DevSecOps---requires a window of time that no longer exists.
+
+Simultaneously, AI is being applied to security itself. Anthropic's Claude Code Security, launched in February 2026, uses Claude Opus 4.6 to reason about codebases ``the way a human security researcher would,'' claiming over 500 vulnerabilities found in production open-source projects that had evaded decades of expert review~\cite{anthropic2026}. This represents a fundamentally different approach: not pattern matching, but semantic understanding of code behavior.
+
+Yet the security landscape is not monolithic. White-box source analysis, no matter how sophisticated, cannot detect what is already exposed to the internet through deployed client-side bundles. A hardcoded API key in a minified JavaScript file, an undocumented admin endpoint visible in a React SPA's routing table, a source map leaking original TypeScript to any browser that requests it---these are runtime exposure problems, not source code problems. Tools operating in the black-box reconnaissance space---exemplified by automated SPA analysis agents that render applications, fetch JavaScript bundles, and extract secrets and endpoints---address a complementary attack surface that source-level tools are structurally blind to.
+
+The problem is that no benchmark exists to evaluate any of this. We have SWE-bench for coding capability~\cite{swebench2024}. We have nothing equivalent for security tooling in the agentic era. Vendors make claims. Buyers have no basis for comparison.
+
+This paper proposes one.
+
+%% ============================================================
+\section{Background and Motivation}
+
+\subsection{The Collapse of the Audit Layer}
+
+Traditional application security follows a linear pipeline:
+
+\begin{center}
+\texttt{Write $\rightarrow$ Commit $\rightarrow$ Scan $\rightarrow$ Review $\rightarrow$ Deploy}
+\end{center}
+
+Every commercial security tool inserts itself somewhere in this pipeline. SAST operates between Commit and Review. DAST operates after Deploy. SCA operates at Commit time by inspecting manifests. The entire model assumes sequential, human-paced development.
+
+Agentic development compresses this to:
+
+\begin{center}
+\texttt{Prompt $\rightarrow$ Generate $\rightarrow$ Execute}
+\end{center}
+
+There is no commit phase. There is no review window. The agent generates code and runs it. By the time a scanner processes the output, the code is already executing---potentially in production.
+
+This is not a speed problem solvable with faster scanners. It is an architectural mismatch. The audit layer assumes code exists as a static artifact available for inspection. Agents produce code as a transient byproduct of execution. The inspection model itself is obsolete.
+
+\subsection{The Rise of AI-Powered Security}
+
+Claude Code Security represents the first major attempt by a foundation model provider to apply frontier reasoning capabilities to vulnerability detection. Rather than matching patterns against a database of known exploits, it reads code and reasons about data flows, component interactions, and logical invariants---the way an experienced security researcher would.
+
+This approach addresses a long-standing limitation of SAST: traditional tools excel at finding known vulnerability patterns (SQL injection via string concatenation, XSS via unsanitized output) but fail at business logic flaws, broken access control, and novel vulnerability classes that don't match existing signatures~\cite{anthropic2026}.
+
+However, this capability operates strictly in the white-box domain. It requires access to source code. It cannot assess what an attacker sees from the outside.
+
+\subsection{The Black-Box Reconnaissance Gap}
+
+Modern single-page applications ship substantial application logic to the client. A React or Next.js application's JavaScript bundles contain:
+
+\begin{itemize}
+    \item API endpoint URLs and routing patterns
+    \item Authentication flow logic and token handling
+    \item Hardcoded configuration values, sometimes including API keys
+    \item Client-side access control logic revealing authorization models
+    \item Library versions with known CVEs
+    \item Source maps exposing original, unminified source code
+\end{itemize}
+
+None of this is visible to a source-code scanner unless it also models the build pipeline and deployment configuration. The shipped bundle is a different artifact from the source repository.
+
+Black-box SPA analysis tools---which render applications in headless browsers, intercept network requests, and analyze JavaScript bundles---operate in this gap. They answer a different question: not ``is this code vulnerable?'' but ``what has this application already exposed to every visitor?''
+
+\subsection{The Benchmark Gap}
+
+The security tooling landscape now contains at least four distinct categories:
+
+\begin{enumerate}
+    \item \textbf{Traditional SAST/SCA} (Semgrep, Snyk, CodeQL)---pattern-matching on source code and dependency manifests
+    \item \textbf{Traditional DAST} (Burp Suite, ZAP)---probing running applications with known attack payloads
+    \item \textbf{AI-powered white-box} (Claude Code Security)---reasoning-based source code analysis
+    \item \textbf{AI-powered black-box} (SPA Hacking Agent)---autonomous client-side exposure analysis
+\end{enumerate}
+
+No benchmark evaluates these categories against each other. No dataset captures vulnerability classes unique to agentic development. No scoring methodology accounts for the fundamental architectural differences between these approaches.
+
+%% ============================================================
+\section{The AgentSecBench Framework}
+
+We propose a benchmark organized around four trust dimensions, inspired by the emerging trust infrastructure framework for agentic systems~\cite{gosavi2026}.
+
+\subsection{Design Principles}
+
+\begin{description}[style=unboxed,leftmargin=0pt]
+    \item[\textbf{P1: Ground truth, not opinion.}] Every test case has a documented vulnerability with known type, location, severity, and correct fix. Scoring is automated.
+    \item[\textbf{P2: Modern stack, real patterns.}] Test applications use current frameworks (Next.js~15, Nuxt~4, SvelteKit) with realistic code patterns.
+    \item[\textbf{P3: Multi-perspective evaluation.}] The same vulnerability may be detectable from source or from the deployed bundle. The benchmark captures which perspective each tool operates from.
+    \item[\textbf{P4: Novel surfaces included.}] The benchmark includes agentic-specific vulnerability classes: MCP protocol security, skill registry poisoning, and AI-generated code artifacts.
+    \item[\textbf{P5: Open and extensible.}] Dataset, runners, and scoring are open-source.
+\end{description}
+
+\subsection{Dimension 1: Detection (SecureBench)}
+
+\textit{Core question: Does the tool find real vulnerabilities?}
+
+The test corpus consists of 60 intentionally vulnerable web applications in three tiers:
+
+\begin{table}[H]
+\centering
+\caption{Test corpus composition}
+\label{tab:corpus}
+\scriptsize
+\begin{tabular}{@{}llp{3.2cm}@{}}
+\toprule
+\textbf{Tier} & \textbf{Count} & \textbf{Examples} \\
+\midrule
+Standard & 20 & SQLi in Next.js API route, XSS in React component \\
+Complex & 20 & IDOR via client-side route guard, race condition in payment \\
+Agentic & 20 & Hallucinated package, malicious MCP tool, prompt injection in comments \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each application includes a ground truth manifest specifying vulnerability type, location (in both source and bundle), severity, detection perspective, and correct fix.
+
+\textbf{Metrics:}
+
+\begin{table}[H]
+\centering
+\caption{Detection dimension metrics}
+\label{tab:detection-metrics}
+\scriptsize
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Metric} & \textbf{Formula} & \textbf{Weight} \\
+\midrule
+True Positive Rate & found / total vulns & 0.30 \\
+False Positive Rate & 1 $-$ (FP / total findings) & 0.20 \\
+Severity Accuracy & correct sev / total found & 0.15 \\
+Time to Detection & norm(1 / avg seconds) & 0.15 \\
+Patch Quality & correct fixes / total fixes & 0.20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Dimension 2: Quality (CompetenceBench)}
+
+\textit{Core question: Are the findings actionable and correct?}
+
+This dimension evaluates signal-to-noise ratio and practical utility through four tests:
+
+\begin{enumerate}
+    \item \textbf{Precision under load}: Scan 10 large open-source projects ($>$100K LOC) with known CVE history. Measure findings against NVD ground truth.
+    \item \textbf{Adversarial robustness}: Inject prompt-injection attempts into code comments and variable names. Measure whether AI tools are manipulated into suppressing findings or generating false ones.
+    \item \textbf{Explanation quality}: Security engineers rate explanations on a 1--5 scale. Inter-rater reliability measured via Krippendorff's $\alpha$.
+    \item \textbf{Fix correctness}: Verify suggested patches compile, pass tests, and eliminate the vulnerability without introducing new ones.
+\end{enumerate}
+
+\subsection{Dimension 3: Auditability (AccountabilityBench)}
+
+\textit{Core question: Can we trace and reproduce what the tool did?}
+
+\begin{table}[H]
+\centering
+\caption{Auditability criteria (scored 0--5 each)}
+\label{tab:auditability}
+\scriptsize
+\begin{tabular}{@{}lp{4.5cm}@{}}
+\toprule
+\textbf{Criterion} & \textbf{Description} \\
+\midrule
+Reasoning chain & Explains \textit{why}, not just \textit{that} \\
+Evidence linking & Finding $\rightarrow$ code path $\rightarrow$ exploit scenario \\
+Confidence calibration & Scores well-calibrated to actual accuracy \\
+Output standardization & SARIF, CycloneDX, or structured schema \\
+Reproducibility & Same input $\rightarrow$ same findings \\
+Audit trail & Logs decision process for review \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Dimension 4: Surface Coverage (SurfaceBench)}
+
+\textit{Core question: Does the tool cover the attack surfaces that matter in 2026?}
+
+This is the differentiation dimension. We test six surfaces:
+
+\begin{table}[H]
+\centering
+\caption{Attack surface coverage matrix}
+\label{tab:surface}
+\scriptsize
+\begin{tabular}{@{}clccc@{}}
+\toprule
+\textbf{\#} & \textbf{Surface} & \textbf{Trad.} & \textbf{AI-WB} & \textbf{AI-BB} \\
+\midrule
+S1 & REST/GraphQL endpoints & $\sim$ & \checkmark & \checkmark \\
+S2 & Client-side secrets & $\times$ & $\sim$ & \checkmark \\
+S3 & Source map exposure & $\times$ & $\times$ & \checkmark \\
+S4 & MCP protocol & $\times$ & $\sim$ & $\times$ \\
+S5 & Skill/plugin registries & $\times$ & $\sim$ & $\times$ \\
+S6 & Supply chain (agentic) & $\sim$ & \checkmark & $\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The columns represent expected capability based on architectural analysis. The benchmark replaces expectations with measurements.
+
+\subsection{Composite Scoring}
+
+The \textbf{AgentSec Score} is a weighted composite:
+
+\begin{equation}
+\text{Score} = 0.35D + 0.25Q + 0.15A + 0.25S
+\end{equation}
+
+\noindent where $D$ = Detection, $Q$ = Quality, $A$ = Auditability, $S$ = Surface Coverage. Each is normalized to 0--100.
+
+Tools are tagged with operating perspective: \texttt{WB} (white-box), \texttt{BB} (black-box), or \texttt{HY} (hybrid). A white-box tool is not penalized for missing source-map exposure, and a black-box tool is not penalized for missing business logic flaws only visible in source.
+
+%% ============================================================
+\section{Benchmark Dataset Construction}
+
+\subsection{Application Generation Methodology}
+
+Test applications are constructed using three methods:
+
+\begin{description}[style=unboxed,leftmargin=0pt]
+    \item[\textbf{Method 1: Manual seeding.}] Security engineers write realistic vulnerable applications. Each vulnerability is documented, peer-reviewed, and validated as exploitable.
+    \item[\textbf{Method 2: CVE reproduction.}] Known CVEs from real-world applications are reproduced in isolated test apps, ensuring the benchmark tests against actual production vulnerabilities.
+    \item[\textbf{Method 3: AI-assisted generation.}] AI agents generate applications with specific patterns. Engineers then seed vulnerabilities natural to the generated code structure, producing the ``agentic'' tier.
+\end{description}
+
+\subsection{Framework Coverage}
+
+\begin{table}[H]
+\centering
+\caption{Target SPA frameworks}
+\label{tab:frameworks}
+\scriptsize
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Framework} & \textbf{Apps} & \textbf{Rationale} \\
+\midrule
+Next.js 15 & 20 & Dominant, server components \\
+Nuxt 4 & 10 & Vue equivalent, different SSR \\
+SvelteKit & 10 & Growing, different compilation \\
+React SPA (Vite) & 10 & Pure client-side, max exposure \\
+Angular 19 & 10 & Enterprise, different modules \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Vulnerability Taxonomy}
+
+We extend OWASP Top 10~\cite{owasp2021} with agentic-specific categories:
+
+\begin{table}[H]
+\centering
+\caption{Extended vulnerability taxonomy}
+\label{tab:taxonomy}
+\scriptsize
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{ID} & \textbf{Category} & \textbf{Source} & \textbf{Perspective} \\
+\midrule
+A01 & Broken Access Control & OWASP & WB \\
+A02 & Cryptographic Failures & OWASP & WB \\
+A03 & Injection & OWASP & WB/BB \\
+A05 & Security Misconfiguration & OWASP & WB/BB \\
+A06 & Vulnerable Components & OWASP & WB/BB \\
+\midrule
+AG01 & Client-Side Secret Exposure & Ours & BB \\
+AG02 & Source Map Leakage & Ours & BB \\
+AG03 & MCP Tool Injection & Ours & WB \\
+AG04 & Skill Registry Poisoning & Ours & WB \\
+AG05 & Hallucinated Dependency & Ours & WB/SCA \\
+AG06 & Agent Prompt Manipulation & Ours & Both \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ============================================================
+\section{Runner Architecture}
+
+\subsection{Tool Integration}
+
+Each tool is wrapped in a standardized runner that: (1) accepts a test application (source directory or deployed URL), (2) invokes the tool with default configuration, (3) normalizes output to a common schema, and (4) records wall-clock time and resource consumption.
+
+\begin{lstlisting}[language=Python,caption={Runner directory structure}]
+benchmark/
+  apps/           # Test applications
+    nextjs-idor-001/
+      src/          # Source code
+      deploy/       # Build artifact
+      ground-truth.yaml
+  runners/
+    base.py         # Abstract interface
+    claude_code_security.py  # WB
+    spa_hacking_agent.py     # BB
+    semgrep.py               # WB
+    snyk.py                  # WB
+    burp_suite.py            # BB
+    zap.py                   # BB
+  scoring/
+    detection.py | quality.py
+    auditability.py | surface.py
+    composite.py
+\end{lstlisting}
+
+\subsection{Deployment Harness}
+
+For black-box tools, applications are deployed to isolated containers exposing accessible URLs. For white-box tools, the source directory is provided directly. This ensures each tool operates in its natural mode.
+
+\subsection{Time Budget}
+
+Each tool receives a fixed time budget: 2 minutes (small, $<$10 files), 5 minutes (medium, 10--50 files), or 10 minutes (large, 50+ files). Tools exceeding the budget receive partial credit for findings produced within the window.
+
+%% ============================================================
+\section{Preliminary Analysis: Architectural Capability Mapping}
+
+Before running the benchmark, we predict structural strengths and weaknesses based on architecture.
+
+\subsection{White-Box AI (Claude Code Security)}
+
+\textbf{Strengths}: Reasons about code semantics; understands cross-function data flow; detects business logic flaws; suggests contextual fixes.
+
+\textbf{Blindspots}: Cannot see build output (source-bundle gap); cannot detect runtime exposure; cannot assess the attacker's external view; requires source access.
+
+\subsection{Black-Box AI (SPA Hacking Agent)}
+
+\textbf{Strengths}: Sees exactly what attackers see; detects client-side secret exposure; discovers source map leakage; enumerates deployed endpoints; identifies library versions with CVEs; no source access needed.
+
+\textbf{Blindspots}: Cannot reason about server-side logic; limited to client-exposed surfaces; cannot suggest source-level fixes.
+
+\subsection{Traditional SAST and DAST}
+
+\textbf{SAST strengths}: Fast, deterministic, reproducible, extensive rule libraries.
+\textbf{SAST blindspots}: No semantic understanding, high FPR for complex vulns, blind to deployment.
+
+\textbf{DAST strengths}: Tests running applications, detects runtime misconfigurations.
+\textbf{DAST blindspots}: Probe-based (only known patterns), limited JS analysis, slow.
+
+\subsection{The Complementarity Thesis}
+
+No single tool category provides complete coverage. We hypothesize:
+
+\begin{enumerate}
+    \item AI white-box dominates Detection and Auditability
+    \item AI black-box dominates Surface (S1--S3)
+    \item Traditional tools show competitive speed but lower coverage
+    \item No tool scores above 70 across all four dimensions
+    \item White-box + black-box AI combination outscores any single tool
+\end{enumerate}
+
+If confirmed, the agentic era requires \textbf{layered AI security}---not a single tool, but a composition of perspectives.
+
+%% ============================================================
+\section{Implications for the Security Industry}
+
+\subsection{The Trust Infrastructure Thesis}
+
+The benchmark dimensions map directly to emerging trust problems~\cite{gosavi2026}:
+
+\begin{table}[H]
+\centering
+\caption{Trust layer alignment}
+\label{tab:trust}
+\scriptsize
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Trust Problem} & \textbf{Benchmark Dimension} \\
+\midrule
+Secure: ``Will this harm us?'' & Detection \\
+Competent: ``Will it work?'' & Quality \\
+Accountable: ``Can we prove it?'' & Auditability \\
+Verified: ``Does it cover enough?'' & Surface Coverage \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Pricing Model Disruption}
+
+Traditional tools price per seat or per scan. Both break when agents are the primary developers. Per-seat pricing shrinks with headcount. Per-scan pricing explodes with continuous generation. The benchmark enables \textbf{per-vulnerability-class coverage} pricing: organizations select tools by coverage class, not scan volume.
+
+\subsection{The Composition Architecture}
+
+If the complementarity thesis holds, the winning architecture is a \textbf{composition layer}: routing source to white-box analysis, deployed apps to black-box reconnaissance, build artifacts to supply-chain analysis, and agent configs to agentic surface analysis---then deduplicating, correlating, and prioritizing across all perspectives.
+
+This ``security orchestrator for agentic development'' may be the most valuable product category the benchmark reveals.
+
+%% ============================================================
+\section{Related Work}
+
+\textbf{Agent Security Bench (ASB)}~\cite{asb2024} formalizes attacks and defenses on LLM-based agents with 400+ tools and 27 attack methods. ASB evaluates agent \textit{safety}, not security \textit{tool capability}---a complementary but distinct goal.
+
+\textbf{SEC-bench}~\cite{secbench2025} benchmarks LLM agents on real vulnerability patching tasks, analogous to SWE-bench for security. It tests whether agents can \textit{fix} vulnerabilities, not whether security tools can \textit{find} them.
+
+\textbf{WASP}~\cite{wasp2025} benchmarks web agent security against prompt injection attacks specifically. Its scope is narrower than AgentSecBench's multi-surface, multi-tool evaluation.
+
+\textbf{SecureAgentBench}~\cite{secureagentbench2025} evaluates whether code agents generate secure code. It measures agent \textit{output quality}, not detection tool capability.
+
+AgentSecBench is the first benchmark designed for cross-category comparison of security \textit{detection tools}---both AI-powered and traditional---across the full range of agentic-era attack surfaces.
+
+%% ============================================================
+\section{Limitations and Future Work}
+
+\textbf{Limitations:} The initial 60-app dataset cannot cover all vulnerability classes. Auditability scoring relies partially on human evaluation. The benchmark evaluates tools in isolation, not in composition. MCP and skill registry surfaces (S4, S5) are based on threat modeling, not large-scale observed attacks.
+
+\textbf{Future work:} (1) Quarterly dataset updates as agentic surfaces evolve. (2) An adversarial track evaluating evasion resistance. (3) Composition scoring for tool combinations. (4) A cost-effectiveness fifth dimension for ROI comparison.
+
+%% ============================================================
+\section{Conclusion}
+
+The security industry is undergoing a structural transition. The audit layer that sustained two decades of tooling is being compressed out of existence by AI coding agents. New AI-powered tools---both white-box and black-box---offer capabilities traditional pattern-matching cannot match. But they operate from fundamentally different perspectives with complementary blindspots.
+
+The industry needs a benchmark. Not a vendor benchmark designed to favor one product, but an open, community-maintained framework that quantifies what each tool catches, what it misses, and where the gaps remain.
+
+AgentSecBench is that framework. By evaluating tools across detection capability, finding quality, auditability, and novel surface coverage, it provides the empirical foundation for security architecture decisions in the agentic era.
+
+The audit layer is dying. The trust layer is emerging. The benchmark tells you who to trust---and what to verify.
+
+%% ============================================================
+\begin{thebibliography}{9}
+
+\bibitem{anthropic2026}
+Anthropic. ``Making frontier cybersecurity capabilities available to defenders.'' February 2026. \url{https://www.anthropic.com/news/claude-code-security}
+
+\bibitem{swebench2024}
+C.~E. Jimenez et al. ``SWE-bench: Can Language Models Resolve Real-World GitHub Issues?'' \textit{ICLR}, 2024.
+
+\bibitem{gosavi2026}
+P.~Gosavi. ``SaaS Cybersecurity is Dead.'' 2026. As analyzed in ``Follow the White Trust'' (unpublished).
+
+\bibitem{owasp2021}
+OWASP Foundation. ``OWASP Top 10:2021.'' \url{https://owasp.org/Top10/}
+
+\bibitem{sarif2018}
+OASIS. ``Static Analysis Results Interchange Format (SARIF) Version 2.1.0.'' 2018.
+
+\bibitem{cybernews2026}
+CyberNews. ``Amateur attacker uses AI toolkits, including Claude and Deepseek, to hack Fortinet firewalls.'' February 2026.
+
+\bibitem{nvd}
+NIST. ``National Vulnerability Database.'' \url{https://nvd.nist.gov/}
+
+\bibitem{asb2024}
+H.~Zhang et al. ``Agent Security Bench (ASB): Formalizing and Benchmarking Attacks and Defenses in LLM-based Agents.'' \textit{arXiv:2410.02644}, 2024.
+
+\bibitem{secbench2025}
+``SEC-bench: Automated Benchmarking of LLM Agents on Real-World Software Security Tasks.'' \textit{arXiv:2506.11791}, 2025.
+
+\bibitem{wasp2025}
+``WASP: Benchmarking Web Agent Security Against Prompt Injection Attacks.'' \textit{arXiv:2504.18575}, 2025.
+
+\bibitem{secureagentbench2025}
+``SecureAgentBench: Benchmarking Secure Code Generation under Realistic Vulnerability Scenarios.'' \textit{OpenReview}, 2025.
+
+\end{thebibliography}
+
+\end{document}

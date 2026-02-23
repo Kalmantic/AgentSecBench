@@ -1,0 +1,42 @@
+# Example ground truth manifest
+app: nextjs-idor-001
+framework: next.js@15.2
+description: >
+  Next.js application with IDOR vulnerability in user API route.
+  User ID parameter accepted without authorization check.
+
+vulnerabilities:
+  - id: VULN-001
+    type: broken-access-control
+    subtype: idor
+    severity: high
+    location:
+      source: src/app/api/users/[id]/route.ts:14
+      bundle: _next/static/chunks/app/api/users/route-a3f2b1.js
+      endpoint: /api/users/:id
+    description: >
+      User ID parameter accepted without authorization check.
+      Any authenticated user can access any other user's data.
+    detection_perspective:
+      - white_box
+      - black_box
+    correct_fix: |
+      Add session.userId === params.id check before data access.
+
+  - id: VULN-002
+    type: AG01
+    subtype: client-side-secret
+    severity: critical
+    location:
+      source: src/lib/config.ts:3
+      bundle: _next/static/chunks/app/layout-b2c3d4.js
+      endpoint: null
+    description: >
+      AWS_SECRET_ACCESS_KEY hardcoded in client-side config module,
+      shipped in production JavaScript bundle.
+    detection_perspective:
+      - white_box
+      - black_box
+    correct_fix: |
+      Move to server-only environment variable. Use next.config.js
+      serverRuntimeConfig or route handler to proxy AWS calls.

@@ -10,6 +10,8 @@ vulnerabilities:
     type: broken-access-control
     subtype: idor
     severity: high
+    atlas_technique: AML.T0084.001
+    owasp_agentic: ASI03
     location:
       source: src/app/api/users/[id]/route.ts:14
       bundle: _next/static/chunks/app/api/users/route-a3f2b1.js
@@ -27,6 +29,8 @@ vulnerabilities:
     type: AG01
     subtype: client-side-secret
     severity: critical
+    atlas_technique: AML.T0055
+    owasp_agentic: ASI03
     location:
       source: src/lib/config.ts:3
       bundle: _next/static/chunks/app/layout-b2c3d4.js
